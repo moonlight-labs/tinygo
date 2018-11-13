@@ -82,7 +82,7 @@
 
 			const mem = () => {
 				// The buffer may change when requesting more memory.
-				return new DataView(this._inst.exports.mem.buffer);
+				return new DataView(this._inst.exports.memory.buffer);
 			}
 
 			const setInt64 = (addr, v) => {
@@ -170,12 +170,10 @@
 			const loadSlice = (addr) => {
 				const array = getInt64(addr + 0);
 				const len = getInt64(addr + 8);
-				return new Uint8Array(this._inst.exports.mem.buffer, array, len);
+				return new Uint8Array(this._inst.exports.memory.buffer, array, len);
 			}
 
-			const loadSliceOfValues = (addr) => {
-				const array = getInt64(addr + 0);
-				const len = getInt64(addr + 8);
+			const loadSliceOfValues = (array, len, cap) => {
 				const a = new Array(len);
 				for (let i = 0; i < len; i++) {
 					a[i] = loadValue(array + i * 8);
@@ -183,95 +181,103 @@
 				return a;
 			}
 
-			const loadString = (addr) => {
-				const saddr = getInt64(addr + 0);
-				const len = getInt64(addr + 8);
-				return decoder.decode(new DataView(this._inst.exports.mem.buffer, saddr, len));
+			const loadString = (ptr, len) => {
+				//const saddr = getInt64(addr + 0);
+				//const len = getInt64(addr + 8);
+				return decoder.decode(new DataView(this._inst.exports.memory.buffer, ptr, len));
 			}
 
 			const timeOrigin = Date.now() - performance.now();
 			this.importObject = {
 				go: {
 					// func wasmExit(code int32)
-					"runtime.wasmExit": (sp) => {
-						const code = mem().getInt32(sp + 8, true);
-						this.exited = true;
-						delete this._inst;
-						delete this._values;
-						delete this._refs;
-						this.exit(code);
-					},
+					//"runtime.wasmExit": (sp) => {
+					//	const code = mem().getInt32(sp + 8, true);
+					//	this.exited = true;
+					//	delete this._inst;
+					//	delete this._values;
+					//	delete this._refs;
+					//	this.exit(code);
+					//},
 
 					// func wasmWrite(fd uintptr, p unsafe.Pointer, n int32)
-					"runtime.wasmWrite": (sp) => {
-						const fd = getInt64(sp + 8);
-						const p = getInt64(sp + 16);
-						const n = mem().getInt32(sp + 24, true);
-						fs.writeSync(fd, new Uint8Array(this._inst.exports.mem.buffer, p, n));
-					},
+					//"runtime.wasmWrite": (sp) => {
+					//	const fd = getInt64(sp + 8);
+					//	const p = getInt64(sp + 16);
+					//	const n = mem().getInt32(sp + 24, true);
+					//	fs.writeSync(fd, new Uint8Array(this._inst.exports.mem.buffer, p, n));
+					//},
 
 					// func nanotime() int64
-					"runtime.nanotime": (sp) => {
-						setInt64(sp + 8, (timeOrigin + performance.now()) * 1000000);
-					},
+					//"runtime.nanotime": (sp) => {
+					//	setInt64(sp + 8, (timeOrigin + performance.now()) * 1000000);
+					//},
 
 					// func walltime() (sec int64, nsec int32)
-					"runtime.walltime": (sp) => {
-						const msec = (new Date).getTime();
-						setInt64(sp + 8, msec / 1000);
-						mem().setInt32(sp + 16, (msec % 1000) * 1000000, true);
-					},
+					//"runtime.walltime": (sp) => {
+					//	const msec = (new Date).getTime();
+					//	setInt64(sp + 8, msec / 1000);
+					//	mem().setInt32(sp + 16, (msec % 1000) * 1000000, true);
+					//},
 
 					// func scheduleCallback(delay int64) int32
-					"runtime.scheduleCallback": (sp) => {
-						const id = this._nextCallbackTimeoutID;
-						this._nextCallbackTimeoutID++;
-						this._callbackTimeouts.set(id, setTimeout(
-							() => { this._resolveCallbackPromise(); },
-							getInt64(sp + 8) + 1, // setTimeout has been seen to fire up to 1 millisecond early
-						));
-						mem().setInt32(sp + 16, id, true);
-					},
+					//"runtime.scheduleCallback": (sp) => {
+					//	const id = this._nextCallbackTimeoutID;
+					//	this._nextCallbackTimeoutID++;
+					//	this._callbackTimeouts.set(id, setTimeout(
+					//		() => { this._resolveCallbackPromise(); },
+					//		getInt64(sp + 8) + 1, // setTimeout has been seen to fire up to 1 millisecond early
+					//	));
+					//	mem().setInt32(sp + 16, id, true);
+					//},
 
 					// func clearScheduledCallback(id int32)
-					"runtime.clearScheduledCallback": (sp) => {
-						const id = mem().getInt32(sp + 8, true);
-						clearTimeout(this._callbackTimeouts.get(id));
-						this._callbackTimeouts.delete(id);
-					},
+					//"runtime.clearScheduledCallback": (sp) => {
+					//	const id = mem().getInt32(sp + 8, true);
+					//	clearTimeout(this._callbackTimeouts.get(id));
+					//	this._callbackTimeouts.delete(id);
+					//},
 
 					// func getRandomData(r []byte)
-					"runtime.getRandomData": (sp) => {
-						crypto.getRandomValues(loadSlice(sp + 8));
-					},
+					//"runtime.getRandomData": (sp) => {
+					//	crypto.getRandomValues(loadSlice(sp + 8));
+					//},
 
 					// func stringVal(value string) ref
-					"syscall/js.stringVal": (sp) => {
+					"syscall/js.stringVal": (value_ptr, value_len, retval) => {
+						console.error("stringVal:", value_ptr, value_len, retval);
 						storeValue(sp + 24, loadString(sp + 8));
 					},
 
 					// func valueGet(v ref, p string) ref
-					"syscall/js.valueGet": (sp) => {
-						storeValue(sp + 32, Reflect.get(loadValue(sp + 8), loadString(sp + 16)));
+					"syscall/js.valueGet": (retval, v_addr, p_ptr, p_len) => {
+						let prop = loadString(p_ptr, p_len);
+						let value = loadValue(v_addr);
+						let result = Reflect.get(value, prop);
+						console.log("valueGet:", prop);
+						console.log("* value:", value);
+						console.log("* result:", result);
+						storeValue(retval, result);
 					},
 
 					// func valueSet(v ref, p string, x ref)
-					"syscall/js.valueSet": (sp) => {
-						Reflect.set(loadValue(sp + 8), loadString(sp + 16), loadValue(sp + 32));
-					},
+					//"syscall/js.valueSet": (sp) => {
+					//	Reflect.set(loadValue(sp + 8), loadString(sp + 16), loadValue(sp + 32));
+					//},
 
 					// func valueIndex(v ref, i int) ref
-					"syscall/js.valueIndex": (sp) => {
-						storeValue(sp + 24, Reflect.get(loadValue(sp + 8), getInt64(sp + 16)));
-					},
+					//"syscall/js.valueIndex": (sp) => {
+					//	storeValue(sp + 24, Reflect.get(loadValue(sp + 8), getInt64(sp + 16)));
+					//},
 
 					// valueSetIndex(v ref, i int, x ref)
-					"syscall/js.valueSetIndex": (sp) => {
-						Reflect.set(loadValue(sp + 8), getInt64(sp + 16), loadValue(sp + 24));
-					},
+					//"syscall/js.valueSetIndex": (sp) => {
+					//	Reflect.set(loadValue(sp + 8), getInt64(sp + 16), loadValue(sp + 24));
+					//},
 
 					// func valueCall(v ref, m string, args []ref) (ref, bool)
 					"syscall/js.valueCall": (sp) => {
+						console.error("valueCall:", sp);
 						try {
 							const v = loadValue(sp + 8);
 							const m = Reflect.get(v, loadString(sp + 16));
@@ -285,57 +291,58 @@
 					},
 
 					// func valueInvoke(v ref, args []ref) (ref, bool)
-					"syscall/js.valueInvoke": (sp) => {
-						try {
-							const v = loadValue(sp + 8);
-							const args = loadSliceOfValues(sp + 16);
-							storeValue(sp + 40, Reflect.apply(v, undefined, args));
-							mem().setUint8(sp + 48, 1);
-						} catch (err) {
-							storeValue(sp + 40, err);
-							mem().setUint8(sp + 48, 0);
-						}
-					},
+					//"syscall/js.valueInvoke": (sp) => {
+					//	try {
+					//		const v = loadValue(sp + 8);
+					//		const args = loadSliceOfValues(sp + 16);
+					//		storeValue(sp + 40, Reflect.apply(v, undefined, args));
+					//		mem().setUint8(sp + 48, 1);
+					//	} catch (err) {
+					//		storeValue(sp + 40, err);
+					//		mem().setUint8(sp + 48, 0);
+					//	}
+					//},
 
 					// func valueNew(v ref, args []ref) (ref, bool)
-					"syscall/js.valueNew": (sp) => {
+					"syscall/js.valueNew": (retval, v_addr, args_ptr, args_len, args_cap) => {
+						const v = loadValue(v_addr);
+						const args = loadSliceOfValues(args_ptr, args_len, args_cap);
+						console.log("valueNew:", v, args);
 						try {
-							const v = loadValue(sp + 8);
-							const args = loadSliceOfValues(sp + 16);
-							storeValue(sp + 40, Reflect.construct(v, args));
-							mem().setUint8(sp + 48, 1);
+							storeValue(retval, Reflect.construct(v, args));
+							mem().setUint8(retval + 8, 1);
 						} catch (err) {
-							storeValue(sp + 40, err);
-							mem().setUint8(sp + 48, 0);
+							storeValue(retval, err);
+							mem().setUint8(retval + 8, 0);
 						}
 					},
 
 					// func valueLength(v ref) int
-					"syscall/js.valueLength": (sp) => {
-						setInt64(sp + 16, parseInt(loadValue(sp + 8).length));
-					},
+					//"syscall/js.valueLength": (sp) => {
+					//	setInt64(sp + 16, parseInt(loadValue(sp + 8).length));
+					//},
 
 					// valuePrepareString(v ref) (ref, int)
-					"syscall/js.valuePrepareString": (sp) => {
-						const str = encoder.encode(String(loadValue(sp + 8)));
-						storeValue(sp + 16, str);
-						setInt64(sp + 24, str.length);
-					},
+					//"syscall/js.valuePrepareString": (sp) => {
+					//	const str = encoder.encode(String(loadValue(sp + 8)));
+					//	storeValue(sp + 16, str);
+					//	setInt64(sp + 24, str.length);
+					//},
 
 					// valueLoadString(v ref, b []byte)
-					"syscall/js.valueLoadString": (sp) => {
-						const str = loadValue(sp + 8);
-						loadSlice(sp + 16).set(str);
-					},
+					//"syscall/js.valueLoadString": (sp) => {
+					//	const str = loadValue(sp + 8);
+					//	loadSlice(sp + 16).set(str);
+					//},
 
 					// func valueInstanceOf(v ref, t ref) bool
-					"syscall/js.valueInstanceOf": (sp) => {
-						mem().setUint8(sp + 24, loadValue(sp + 8) instanceof loadValue(sp + 16));
-					},
+					//"syscall/js.valueInstanceOf": (sp) => {
+					//	mem().setUint8(sp + 24, loadValue(sp + 8) instanceof loadValue(sp + 16));
+					//},
 
-					"debug": (value) => {
-						console.log(value);
-					},
+					//"debug": (value) => {
+					//	console.log(value);
+					//},
 				}
 			};
 		}
@@ -356,7 +363,7 @@
 			this._callbackShutdown = false;
 			this.exited = false;
 
-			const mem = new DataView(this._inst.exports.mem.buffer)
+			const mem = new DataView(this._inst.exports.memory.buffer)
 
 			// Pass command line arguments and environment variables to WebAssembly by writing them to the linear memory.
 			let offset = 4096;
@@ -397,7 +404,7 @@
 						setTimeout(resolve, 0); // make sure it is asynchronous
 					};
 				});
-				this._inst.exports.run(argc, argv);
+				this._inst.exports.cwa_main(argc, argv);
 				if (this.exited) {
 					break;
 				}

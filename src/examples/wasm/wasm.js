@@ -55,7 +55,8 @@ function init() {
   WebAssembly.instantiateStreaming(fetch(WASM_URL), importObject).then(function(obj) {
     wasm = obj.instance;
     memory8 = new Uint8Array(wasm.exports.memory.buffer);
-    wasm.exports.cwa_main();
+    go.run(wasm);
+    //wasm.exports.cwa_main();
     updateResult();
   })
 }
