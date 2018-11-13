@@ -252,10 +252,10 @@
 					// func valueGet(v ref, p string) ref
 					"syscall/js.valueGet": (retval, v_addr, p_ptr, p_len) => {
 						let prop = loadString(p_ptr, p_len);
-						let value = loadValue(v_addr);
-						let result = Reflect.get(value, prop);
 						console.log("valueGet:", prop);
+						let value = loadValue(v_addr);
 						console.log("* value:", value);
+						let result = Reflect.get(value, prop);
 						console.log("* result:", result);
 						storeValue(retval, result);
 					},
