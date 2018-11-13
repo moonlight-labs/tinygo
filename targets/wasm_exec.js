@@ -167,9 +167,7 @@
 				mem().setUint32(addr, ref, true);
 			}
 
-			const loadSlice = (addr) => {
-				const array = getInt64(addr + 0);
-				const len = getInt64(addr + 8);
+			const loadSlice = (array, len, cap) => {
 				return new Uint8Array(this._inst.exports.memory.buffer, array, len);
 			}
 
@@ -244,9 +242,10 @@
 					//},
 
 					// func stringVal(value string) ref
-					"syscall/js.stringVal": (value_ptr, value_len, retval) => {
-						console.error("stringVal:", value_ptr, value_len, retval);
-						storeValue(sp + 24, loadString(sp + 8));
+					"syscall/js.stringVal": (ret_ptr, value_ptr, value_len) => {
+						const s = loadString(value_ptr, value_len);
+						console.log("stringVal:", ret_ptr, s);
+						storeValue(ret_ptr, s);
 					},
 
 					// func valueGet(v ref, p string) ref
@@ -261,9 +260,13 @@
 					},
 
 					// func valueSet(v ref, p string, x ref)
-					//"syscall/js.valueSet": (sp) => {
-					//	Reflect.set(loadValue(sp + 8), loadString(sp + 16), loadValue(sp + 32));
-					//},
+					"syscall/js.valueSet": (v_addr, p_ptr, p_len, x_addr) => {
+						const v = loadValue(v_addr);
+						const p = loadString(p_ptr, p_len);
+						const x = loadValue(x_addr);
+						console.log("valueSet", v, p, x);
+						Reflect.set(v, p, x);
+					},
 
 					// func valueIndex(v ref, i int) ref
 					//"syscall/js.valueIndex": (sp) => {
@@ -276,17 +279,18 @@
 					//},
 
 					// func valueCall(v ref, m string, args []ref) (ref, bool)
-					"syscall/js.valueCall": (sp) => {
-						console.error("valueCall:", sp);
+					"syscall/js.valueCall": (ret_addr, v_addr, m_ptr, m_len, args_ptr, args_len, args_cap) => {
+						const v = loadValue(v_addr);
+						const name = loadString(m_ptr, m_len);
+						const args = loadSliceOfValues(args_ptr, args_len, args_cap);
+						console.log("valueCall:", v, name, args);
 						try {
-							const v = loadValue(sp + 8);
-							const m = Reflect.get(v, loadString(sp + 16));
-							const args = loadSliceOfValues(sp + 32);
-							storeValue(sp + 56, Reflect.apply(m, v, args));
-							mem().setUint8(sp + 64, 1);
+							const m = Reflect.get(v, name);
+							storeValue(ret_addr, Reflect.apply(m, v, args));
+							mem().setUint8(ret_addr + 8, 1);
 						} catch (err) {
-							storeValue(sp + 56, err);
-							mem().setUint8(sp + 64, 0);
+							storeValue(ret_addr, err);
+							mem().setUint8(ret_addr + 8, 0);
 						}
 					},
 
@@ -304,16 +308,16 @@
 					//},
 
 					// func valueNew(v ref, args []ref) (ref, bool)
-					"syscall/js.valueNew": (retval, v_addr, args_ptr, args_len, args_cap) => {
+					"syscall/js.valueNew": (ret_addr, v_addr, args_ptr, args_len, args_cap) => {
 						const v = loadValue(v_addr);
 						const args = loadSliceOfValues(args_ptr, args_len, args_cap);
 						console.log("valueNew:", v, args);
 						try {
-							storeValue(retval, Reflect.construct(v, args));
-							mem().setUint8(retval + 8, 1);
+							storeValue(ret_addr, Reflect.construct(v, args));
+							mem().setUint8(ret_addr + 8, 1);
 						} catch (err) {
-							storeValue(retval, err);
-							mem().setUint8(retval + 8, 0);
+							storeValue(ret_addr, err);
+							mem().setUint8(ret_addr+ 8, 0);
 						}
 					},
 
@@ -323,17 +327,21 @@
 					//},
 
 					// valuePrepareString(v ref) (ref, int)
-					//"syscall/js.valuePrepareString": (sp) => {
-					//	const str = encoder.encode(String(loadValue(sp + 8)));
-					//	storeValue(sp + 16, str);
-					//	setInt64(sp + 24, str.length);
-					//},
+					"syscall/js.valuePrepareString": (ret_addr, v_addr) => {
+						console.log("valuePrepareString", ret_addr, v_addr);
+						const s = String(loadValue(v_addr));
+						console.log("* string:", s);
+						const str = encoder.encode(s);
+						storeValue(ret_addr, str);
+						setInt64(ret_addr + 8, str.length);
+					},
 
 					// valueLoadString(v ref, b []byte)
-					//"syscall/js.valueLoadString": (sp) => {
-					//	const str = loadValue(sp + 8);
-					//	loadSlice(sp + 16).set(str);
-					//},
+					"syscall/js.valueLoadString": (v_addr, slice_ptr, slice_len, slice_cap) => {
+						const str = loadValue(v_addr);
+						console.log("valueLoadString:", str);
+						loadSlice(slice_ptr, slice_len, slice_cap).set(str);
+					},
 
 					// func valueInstanceOf(v ref, t ref) bool
 					//"syscall/js.valueInstanceOf": (sp) => {

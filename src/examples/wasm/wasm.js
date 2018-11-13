@@ -11,6 +11,7 @@ var importObject = {
   env: {
     'syscall/js.stringVal': go.importObject.go['syscall/js.stringVal'],
     'syscall/js.valueGet': go.importObject.go['syscall/js.valueGet'],
+    'syscall/js.valueSet': go.importObject.go['syscall/js.valueSet'],
     'syscall/js.valueCall': go.importObject.go['syscall/js.valueCall'],
     'syscall/js.valueNew': go.importObject.go['syscall/js.valueNew'],
     'syscall/js.valuePrepareString': go.importObject.go['syscall/js.valuePrepareString'],
@@ -42,10 +43,7 @@ var importObject = {
 };
 
 function updateResult() {
-  let a = parseInt(document.querySelector('#a').value);
-  let b = parseInt(document.querySelector('#b').value);
-  let result = wasm.exports.add(a, b);
-  document.querySelector('#result').value = result;
+  wasm.exports.update();
 }
 
 function init() {
